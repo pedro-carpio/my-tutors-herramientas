@@ -1,1 +1,7 @@
-/* You can add global styles to this file, and also import other style files */
+/* Estilos globales - Sistema de temas */
+
+// Sistema de temas - usando @use en lugar de @import (no deprecado)
+@use 'assets/styles/theme';
+@use 'assets/styles/typography';
+@use 'assets/styles/base';
+@use 'assets/styles/utilities';
