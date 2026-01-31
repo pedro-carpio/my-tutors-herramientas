@@ -126,10 +126,15 @@ export class Login {
   protected errorMessage = signal('');
 
   protected signInWithGoogle(): void {
+    console.log('🔵 [Login] Iniciando flujo OAuth con Google');
+    console.log('🔵 [Login] URL de OAuth:', this.googleOAuthUrl);
+
     const width = 500;
     const height = 600;
     const left = window.screen.width / 2 - width / 2;
     const top = window.screen.height / 2 - height / 2;
+
+    console.log('🔵 [Login] Abriendo popup de Google...');
 
     const popup = window.open(
       this.googleOAuthUrl,
@@ -138,19 +143,31 @@ export class Login {
     );
 
     if (!popup) {
+      console.error('🔴 [Login] Popup bloqueado por el navegador');
       this.errorMessage.set(
         'No se pudo abrir la ventana de Google. Verifica que no esté bloqueada por el navegador.',
       );
       return;
     }
 
+    console.log('✅ [Login] Popup abierto exitosamente');
+    console.log('🔵 [Login] Monitoreando cierre del popup...');
+
     // Monitorear cuando se cierre el popup
     const checkPopup = setInterval(() => {
       if (popup.closed) {
+        console.log('🔵 [Login] Popup cerrado');
         clearInterval(checkPopup);
+
         // Verificar si hay tokens (el usuario completó el OAuth)
-        if (this.tokenStorage.hasToken()) {
+        const hasToken = this.tokenStorage.hasToken();
+        console.log('🔵 [Login] ¿Tiene token guardado?:', hasToken);
+
+        if (hasToken) {
+          console.log('✅ [Login] OAuth completado - redirigiendo a /inicio');
           this.router.navigate(['/inicio']);
+        } else {
+          console.log('⚠️ [Login] Popup cerrado sin tokens - usuario canceló o hubo error');
         }
       }
     }, 500);

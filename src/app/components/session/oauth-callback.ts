@@ -94,27 +94,54 @@ export class OAuthCallback implements OnInit {
     this.route.snapshot.queryParamMap.get('message') || 'Error desconocido';
 
   ngOnInit(): void {
+    console.log('🔵 [OAuth Callback] Componente inicializado');
+    console.log('🔵 [OAuth Callback] URL completa:', window.location.href);
+    console.log('🔵 [OAuth Callback] Query params:', window.location.search);
+
     const token = this.route.snapshot.queryParamMap.get('token');
     const refreshToken = this.route.snapshot.queryParamMap.get('refresh_token');
+    const error = this.route.snapshot.queryParamMap.get('error');
+    const message = this.route.snapshot.queryParamMap.get('message');
+
+    console.log('🔵 [OAuth Callback] Parámetros extraídos:', {
+      hasToken: !!token,
+      tokenLength: token?.length || 0,
+      hasRefreshToken: !!refreshToken,
+      refreshTokenLength: refreshToken?.length || 0,
+      hasError: !!error,
+      errorMessage: message,
+    });
 
     if (token && refreshToken) {
+      console.log('✅ [OAuth Callback] Tokens recibidos correctamente');
+
       // Guardar tokens
       this.tokenStorage.saveToken(token);
       this.tokenStorage.saveRefreshToken(refreshToken);
 
-      console.log('✅ OAuth exitoso - tokens guardados');
+      console.log('✅ [OAuth Callback] Tokens guardados en storage');
+      console.log('🔵 [OAuth Callback] Cargando usuario...');
 
       // Cargar usuario para actualizar UI
       this.app.loadCurrentUser();
 
       // Limpiar URL y redirigir
       setTimeout(() => {
+        console.log('🟢 [OAuth Callback] Redirigiendo a /inicio');
         this.router.navigate(['/inicio']);
       }, 500);
     } else if (!this.error()) {
       // No hay tokens ni error - algo salió mal
+      console.error('🔴 [OAuth Callback] No se recibieron tokens ni error');
+      console.error('🔴 [OAuth Callback] Redirigiendo a login con error');
+
       this.router.navigate(['/login'], {
         queryParams: { error: 'oauth_failed', message: 'No se recibieron tokens' },
+      });
+    } else {
+      console.error('🔴 [OAuth Callback] Error recibido del backend:', {
+        error,
+        message,
       });
     }
   }
