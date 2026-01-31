@@ -1,3 +1,0 @@
-# Ignorar archivos de environment con secretos
-# Commitear solo environment.development.ts y environment.prod.ts
-environment.local.ts
