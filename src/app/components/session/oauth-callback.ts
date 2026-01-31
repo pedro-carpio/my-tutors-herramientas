@@ -97,6 +97,7 @@ export class OAuthCallback implements OnInit {
     console.log('🔵 [OAuth Callback] Componente inicializado');
     console.log('🔵 [OAuth Callback] URL completa:', window.location.href);
     console.log('🔵 [OAuth Callback] Query params:', window.location.search);
+    console.log('🔵 [OAuth Callback] ¿Es popup?:', window.opener !== null);
 
     const token = this.route.snapshot.queryParamMap.get('token');
     const refreshToken = this.route.snapshot.queryParamMap.get('refresh_token');
@@ -115,34 +116,91 @@ export class OAuthCallback implements OnInit {
     if (token && refreshToken) {
       console.log('✅ [OAuth Callback] Tokens recibidos correctamente');
 
-      // Guardar tokens
-      this.tokenStorage.saveToken(token);
-      this.tokenStorage.saveRefreshToken(refreshToken);
+      // Si es un popup (tiene window.opener), enviar tokens a la ventana principal
+      if (window.opener && !window.opener.closed) {
+        console.log('📤 [OAuth Callback] Enviando tokens a ventana principal via postMessage');
 
-      console.log('✅ [OAuth Callback] Tokens guardados en storage');
-      console.log('🔵 [OAuth Callback] Cargando usuario...');
+        window.opener.postMessage(
+          {
+            type: 'OAUTH_SUCCESS',
+            token,
+            refreshToken,
+          },
+          window.location.origin,
+        );
 
-      // Cargar usuario para actualizar UI
-      this.app.loadCurrentUser();
+        console.log('✅ [OAuth Callback] Mensaje enviado - cerrando popup');
 
-      // Limpiar URL y redirigir
-      setTimeout(() => {
-        console.log('🟢 [OAuth Callback] Redirigiendo a /inicio');
-        this.router.navigate(['/inicio']);
-      }, 500);
+        // Cerrar el popup después de un breve delay
+        setTimeout(() => {
+          window.close();
+        }, 500);
+      } else {
+        // Si NO es un popup (navegación directa), guardar tokens normalmente
+        console.log('🔵 [OAuth Callback] No es popup - guardando tokens localmente');
+
+        this.tokenStorage.saveToken(token);
+        this.tokenStorage.saveRefreshToken(refreshToken);
+
+        console.log('✅ [OAuth Callback] Tokens guardados en storage');
+        console.log('🔵 [OAuth Callback] Cargando usuario...');
+
+        // Cargar usuario para actualizar UI
+        this.app.loadCurrentUser();
+
+        // Redirigir a inicio
+        setTimeout(() => {
+          console.log('🟢 [OAuth Callback] Redirigiendo a /inicio');
+          this.router.navigate(['/inicio']);
+        }, 500);
+      }
+    } else if (error) {
+      // Hay un error del backend
+      console.error('🔴 [OAuth Callback] Error recibido del backend:', {
+        error,
+        message,
+      });
+
+      // Si es popup, enviar error a ventana principal
+      if (window.opener && !window.opener.closed) {
+        console.log('📤 [OAuth Callback] Enviando error a ventana principal');
+
+        window.opener.postMessage(
+          {
+            type: 'OAUTH_ERROR',
+            error,
+            message: message || 'Error desconocido',
+          },
+          window.location.origin,
+        );
+
+        setTimeout(() => {
+          window.close();
+        }, 500);
+      }
     } else if (!this.error()) {
       // No hay tokens ni error - algo salió mal
       console.error('🔴 [OAuth Callback] No se recibieron tokens ni error');
       console.error('🔴 [OAuth Callback] Redirigiendo a login con error');
 
-      this.router.navigate(['/login'], {
-        queryParams: { error: 'oauth_failed', message: 'No se recibieron tokens' },
-      });
-    } else {
-      console.error('🔴 [OAuth Callback] Error recibido del backend:', {
-        error,
-        message,
-      });
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          {
+            type: 'OAUTH_ERROR',
+            error: 'oauth_failed',
+            message: 'No se recibieron tokens',
+          },
+          window.location.origin,
+        );
+
+        setTimeout(() => {
+          window.close();
+        }, 500);
+      } else {
+        this.router.navigate(['/login'], {
+          queryParams: { error: 'oauth_failed', message: 'No se recibieron tokens' },
+        });
+      }
     }
   }
 

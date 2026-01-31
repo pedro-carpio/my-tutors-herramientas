@@ -125,6 +125,49 @@ export class Login {
   protected loading = signal(false);
   protected errorMessage = signal('');
 
+  constructor() {
+    // Escuchar mensajes del popup OAuth
+    window.addEventListener('message', this.handleOAuthMessage.bind(this));
+  }
+
+  private handleOAuthMessage(event: MessageEvent): void {
+    // Verificar que el mensaje viene del mismo origen
+    if (event.origin !== window.location.origin) {
+      console.warn('🔴 [Login] Mensaje de origen no confiable:', event.origin);
+      return;
+    }
+
+    console.log('📨 [Login] Mensaje recibido del popup:', event.data);
+
+    if (event.data.type === 'OAUTH_SUCCESS') {
+      const { token, refreshToken } = event.data;
+
+      console.log('✅ [Login] Tokens recibidos del popup');
+      console.log('🔵 [Login] Guardando tokens...');
+
+      // Guardar tokens
+      this.tokenStorage.saveToken(token);
+      this.tokenStorage.saveRefreshToken(refreshToken);
+
+      console.log('✅ [Login] Tokens guardados');
+      console.log('🔵 [Login] Cargando usuario...');
+
+      // Cargar usuario para actualizar UI
+      this.app.loadCurrentUser();
+
+      console.log('✅ [Login] OAuth completado - redirigiendo a /inicio');
+
+      // Redirigir a inicio
+      this.router.navigate(['/inicio']);
+    } else if (event.data.type === 'OAUTH_ERROR') {
+      console.error('🔴 [Login] Error recibido del popup:', event.data);
+
+      this.errorMessage.set(
+        event.data.message || 'Error en la autenticación con Google. Intenta de nuevo.',
+      );
+    }
+  }
+
   protected signInWithGoogle(): void {
     console.log('🔵 [Login] Iniciando flujo OAuth con Google');
     console.log('🔵 [Login] URL de OAuth:', this.googleOAuthUrl);
@@ -151,26 +194,7 @@ export class Login {
     }
 
     console.log('✅ [Login] Popup abierto exitosamente');
-    console.log('🔵 [Login] Monitoreando cierre del popup...');
-
-    // Monitorear cuando se cierre el popup
-    const checkPopup = setInterval(() => {
-      if (popup.closed) {
-        console.log('🔵 [Login] Popup cerrado');
-        clearInterval(checkPopup);
-
-        // Verificar si hay tokens (el usuario completó el OAuth)
-        const hasToken = this.tokenStorage.hasToken();
-        console.log('🔵 [Login] ¿Tiene token guardado?:', hasToken);
-
-        if (hasToken) {
-          console.log('✅ [Login] OAuth completado - redirigiendo a /inicio');
-          this.router.navigate(['/inicio']);
-        } else {
-          console.log('⚠️ [Login] Popup cerrado sin tokens - usuario canceló o hubo error');
-        }
-      }
-    }, 500);
+    console.log('🔵 [Login] Esperando respuesta via postMessage...');
   }
 
   protected onSubmit(): void {
