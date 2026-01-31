@@ -25,11 +25,10 @@ export class HttpService {
   protected readonly apiUrl = environment.apiUrl;
 
   /**
-   * Crea headers HTTP con autenticación de doble capa segura:
-   * - Authorization: Bearer token del backend (BACKEND_API_TOKEN)
-   * - X-Firebase-Token: JWT generado y firmado por el backend
+   * Crea headers HTTP con autenticación de usuario (JWT solamente)
    *
    * Usado para endpoints custom (/curso, /user/me) que necesitan identificar al usuario
+   * NO requiere BACKEND_API_TOKEN - el JWT firmado por el backend es suficiente
    */
   protected createUserAuthHeaders(): HttpHeaders {
     const jwt = this.tokenStorage.getToken();
@@ -39,7 +38,6 @@ export class HttpService {
     }
 
     return new HttpHeaders({
-      Authorization: `Bearer ${environment.backendApiToken}`,
       'X-Firebase-Token': jwt,
       'Content-Type': 'application/json',
     });
