@@ -1,51 +1,208 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth';
+import { UserService, type BackendUser } from '../../services/user.service';
+import { CursoService, type Curso } from '../../services/curso.service';
 import { CommonModule } from '@angular/common';
+import { catchError, of } from 'rxjs';
 
 @Component({
   selector: 'app-home',
   imports: [CommonModule],
   template: `
-    <div class="home-container">
-      @if (authService.isLoading()) {
-        <div class="loading-state">
-          <h2>Cargando...</h2>
-          <p>Verificando sesión</p>
+    <div class="dashboard-container">
+      <header class="dashboard-header">
+        <h1>Dashboard</h1>
+        <div class="user-info">
+          <span>{{ authUser()?.displayName || authUser()?.email }}</span>
+          <button class="btn btn-outline" (click)="onLogout()">Cerrar Sesión</button>
         </div>
-      } @else if (authService.isAuthenticated()) {
-        <div class="welcome-state">
-          <h1>¡Bienvenido!</h1>
-        </div>
-      } @else {
-        <div class="guest-state">
-          <h1>Bienvenido a Mi Cuaderno</h1>
-          <p>Por favor inicia sesión para continuar</p>
-        </div>
-      }
+      </header>
+
+      <div class="dashboard-content">
+        <!-- Perfil del Usuario -->
+        <section class="card">
+          <h2>Mi Perfil</h2>
+          @if (loadingProfile()) {
+            <p>Cargando perfil...</p>
+          } @else if (profileError()) {
+            <div class="alert error">{{ profileError() }}</div>
+          } @else if (backendUser()) {
+            <pre class="json-display">{{ backendUser() | json }}</pre>
+          } @else {
+            <div class="alert warning">
+              Perfil no encontrado en el backend. Verifica que tu cuenta esté registrada.
+            </div>
+          }
+        </section>
+
+        <!-- Cursos del Usuario -->
+        <section class="card">
+          <h2>Mis Cursos</h2>
+          @if (loadingCursos()) {
+            <p>Cargando cursos...</p>
+          } @else if (cursosError()) {
+            <div class="alert error">{{ cursosError() }}</div>
+          } @else if (cursos() && cursos()!.length > 0) {
+            <pre class="json-display">{{ cursos() | json }}</pre>
+          } @else {
+            <div class="alert info">No tienes cursos asignados.</div>
+          }
+        </section>
+      </div>
     </div>
   `,
   styles: [
     `
-      .home-container {
-        max-width: 800px;
+      .dashboard-container {
+        max-width: 1200px;
         margin: 0 auto;
         padding: 2rem;
       }
 
-      .loading-state,
-      .welcome-state,
-      .guest-state {
-        text-align: center;
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
       }
 
-      h1 {
-        color: var(--primary);
-        margin-bottom: 1.5rem;
+      .user-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .dashboard-content {
+        display: grid;
+        gap: 2rem;
+      }
+
+      .card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      .card h2 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+      }
+
+      .json-display {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 1rem;
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+
+      .alert {
+        padding: 1rem;
+        border-radius: 4px;
+        margin: 1rem 0;
+      }
+
+      .alert.error {
+        background: #fee;
+        border: 1px solid #fcc;
+        color: #c33;
+      }
+
+      .alert.warning {
+        background: #ffc;
+        border: 1px solid #fc6;
+        color: #960;
+      }
+
+      .alert.info {
+        background: #e6f2ff;
+        border: 1px solid #99ccff;
+        color: #0066cc;
       }
     `,
   ],
 })
-export class Home {
-  protected readonly authService = inject(AuthService);
+export class Home implements OnInit {
+  private authService = inject(AuthService);
+  private userService = inject(UserService);
+  private cursoService = inject(CursoService);
+  private router = inject(Router);
+
+  protected authUser = this.authService.currentUser;
+  protected backendUser = signal<BackendUser | null>(null);
+  protected cursos = signal<Curso[] | null>(null);
+
+  protected loadingProfile = signal(false);
+  protected loadingCursos = signal(false);
+  protected profileError = signal('');
+  protected cursosError = signal('');
+
+  ngOnInit(): void {
+    const user = this.authUser();
+    if (!user) {
+      this.router.navigate(['/login']);
+      return;
+    }
+
+    this.loadUserProfile(user.uid);
+    this.loadCursos(user.uid);
+  }
+
+  private loadUserProfile(firebaseUid: string): void {
+    this.loadingProfile.set(true);
+    this.profileError.set('');
+
+    this.userService
+      .getUserByFirebaseUid(firebaseUid)
+      .pipe(
+        catchError((error) => {
+          this.profileError.set(
+            error.status === 404
+              ? 'Perfil no encontrado. Contacta al administrador.'
+              : 'Error al cargar perfil',
+          );
+          return of(null);
+        }),
+      )
+      .subscribe((response) => {
+        this.loadingProfile.set(false);
+        if (response) {
+          this.backendUser.set(response.user);
+        }
+      });
+  }
+
+  private loadCursos(firebaseUid: string): void {
+    this.loadingCursos.set(true);
+    this.cursosError.set('');
+
+    this.cursoService
+      .getCursos(firebaseUid)
+      .pipe(
+        catchError((error) => {
+          this.cursosError.set('Error al cargar cursos');
+          console.error('Error al cargar cursos:', error);
+          return of(null);
+        }),
+      )
+      .subscribe((response) => {
+        this.loadingCursos.set(false);
+        if (response) {
+          this.cursos.set(response.cursos);
+        }
+      });
+  }
+
+  protected onLogout(): void {
+    this.authService.logout().subscribe(() => {
+      this.router.navigate(['/login']);
+    });
+  }
 }

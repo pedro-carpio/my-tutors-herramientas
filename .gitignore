@@ -41,3 +41,7 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Local environment files with secrets (DO NOT COMMIT)
+src/environments/environment.local.ts
+src/environments/*.local.ts

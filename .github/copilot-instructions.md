@@ -82,13 +82,80 @@ export class MyComponent {
 }
 ```
 
+## Backend Integration
+
+### API Architecture
+
+**NO direct HttpClient usage in components** - All HTTP calls go through domain services.
+
+### Auth Flow (Firebase → Backend)
+
+1. User signs in via [AuthService](src/app/services/auth.ts) using Firebase SDK
+2. Frontend extracts `firebase_uid` from Firebase User object
+3. On first login, call `UserService.registerUser()` to create user record:
+   ```typescript
+   userService.registerUser(firebase_uid, email, displayName).subscribe(...)
+   ```
+4. For subsequent requests, pass `firebase_uid` to service methods - they inject it as `Authorization: Bearer {uid}` header
+5. Backend middleware validates UID against `user_account` table ([backend/src/middleware/auth.ts](../../backend/src/middleware/auth.ts))
+
+### Environment Configuration
+
+- **API URL**: `environment.apiUrl` = `https://d1-rest.pedrocarpiom.workers.dev`
+- **Backend API Token**: 
+  - **Development**: `environment.backendApiToken` = `'my super secret token'` (hardcoded in [environment.development.ts](src/environments/environment.development.ts))
+  - **Production**: Injected from `process.env.BACKEND_API_TOKEN` via [apphosting.yaml](apphosting.yaml)
+- **Firebase config**: Separate configs for dev/prod in `environment.*.ts`
+- **Role IDs**: Backend roles - `1=admin, 2=teacher, 3=director, 4=seller`
+
+**Two authentication systems**:
+1. **BACKEND_API_TOKEN**: For `/rest/*` endpoints (general app authentication)
+2. **firebase_uid**: For `/curso`, `/user` endpoints (user-specific authentication)
+
+### Backend Endpoints
+
+**Custom Routes** (preferred for complex logic):
+- `/user/register` - POST - Register new user
+- `/user/me?firebase_uid=xxx` - GET - Get user profile
+- `/curso` - GET - List courses (auto-filtered by role)
+- `/curso` - POST - Create course
+- `/curso/:id` - PATCH - Update course
+- `/curso/:id` - DELETE - Delete course (admin only)
+
+**Generic REST** (for simple CRUD):
+- `/rest/{table}` - GET - List records with filtering/sorting/pagination
+- `/rest/{table}/{id}` - GET - Get single record
+- `/rest/{table}` - POST - Create record
+- `/rest/{table}/{id}` - PATCH - Update record
+- `/rest/{table}/{id}` - DELETE - Delete record
+
+See [backend README](../../backend/README.md) for full REST API documentation.
+
+## Route Guards System
+
+Three guards control navigation flow ([guards/](src/app/guards/)):
+
+1. **[authGuard](src/app/guards/auth.guard.ts)**: Protects authenticated routes
+   - Redirects to `/anuncio` if not logged in
+   - Uses `toObservable()` to handle signal-based loading state
+2. **[publicGuard](src/app/guards/public.guard.ts)**: Prevents authenticated users from accessing login/register
+   - Redirects to `/inicio` if already logged in
+3. **[rootGuard](src/app/guards/root.guard.ts)**: Smart root redirect
+   - Sends authenticated users to `/inicio`
+   - Sends guests to `/anuncio`
+
+**Pattern**: Guards use `toObservable(authService.loading)` for async auth state checks during SSR.
+
 ## Firebase Authentication
+
+## Firebase Authentication (Frontend Only)
 
 ### Configuration
 
 - **Firebase SDK**: `@angular/fire@20.0.1` + `firebase@12.8.0`
 - **Environments**: [environment.ts](src/environments/environment.ts) (prod), [environment.development.ts](src/environments/environment.development.ts) (dev)
 - **Browser-only**: Firebase initialized only in browser via [app.config.ts](src/app/app.config.ts), never on server
+- **Backend sync**: After Firebase sign-in, sync user data to backend via `/user/register` endpoint
 
 ### Auth Service
 
@@ -101,11 +168,74 @@ export class MyComponent {
 
 ### Auth Components
 
-- [Login](src/app/login.ts) - Email/password + Google sign-in
-- [Register](src/app/register.ts) - Registration with validation
+- [Login](src/app/components/session/login.ts) - Email/password + Google sign-in
+- [Register](src/app/components/session/register.ts) - Registration with validation
 - Error messages translated to Spanish
 
-See [FIREBASE_AUTH.md](FIREBASE_AUTH.md) for complete setup guide.
+## Data Services
+
+### Service Architecture (Refactored)
+
+Services follow a **layered architecture** with **two authentication systems**:
+
+**Base Layer**: [HttpService](src/app/services/http.service.ts)
+- Provides common HTTP configuration and SSR safety
+- **Two types of auth headers**:
+  - `createUserAuthHeaders(firebaseUid)` - For custom endpoints (/curso, /user) that identify specific users
+  - `createBackendAuthHeaders(backendToken)` - For REST generic endpoints (/rest/*) using BACKEND_API_TOKEN
+- Protected methods:
+  - `get$(url, firebaseUid)` - User-specific GET
+  - `getRest$(url, backendToken)` - Generic REST GET
+  - `post$()`, `patch$()`, `delete$()` - User-specific mutations
+- Platform checks with `ensureBrowser()` to prevent SSR errors
+
+**Authentication Flow**:
+1. **Firebase UID** → Custom endpoints (`/curso`, `/user`) → Backend validates against `user_account` table
+2. **BACKEND_API_TOKEN** → REST generic endpoints (`/rest/*`) → Backend validates against SECRET
+
+**Domain Services** (extend HttpService):
+
+1. **[UserService](src/app/services/user.service.ts)** - User management
+   - `registerUser(firebase_uid, email, displayName)` - Register new users (role_id: 2, inactive by default)
+   - `getUserByFirebaseUid(uid)` - Fetch user profile from backend
+   - `getCurrentUser(uid)` - Alias for getting current user
+   - Private helper: `capitalizeName()` - Formats Spanish names correctly
+
+2. **[CursoService](src/app/services/curso.service.ts)** - Course management
+   - `getCursos(firebaseUid)` - List courses (auto-filtered by backend: admin sees all, teachers see only theirs)
+   - `getCursoById(id, uid)` - Get single course
+   - `createCurso(request, uid)` - Create course (teachers auto-assign as docente)
+   - `updateCurso(id, request, uid)` - Update course (ownership verified by backend)
+   - `deleteCurso(id, uid)` - Delete course (admin only)
+   - `getCursosGeneric()` - Test endpoint using `/rest/curso` with BACKEND_API_TOKEN (NO user filtering)
+
+**Pattern for new domain services**:
+```typescript
+import { Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
+import { HttpService } from './http.service';
+
+@Injectable({ providedIn: 'root' })
+export class EstudianteService extends HttpService {
+  // Custom endpoints with user identification
+  getEstudiantes(firebaseUid: string): Observable<any> {
+    return this.get$<any>('/estudiante', firebaseUid);
+  }
+  
+  // Generic REST endpoints (all data, no user filter)
+  getAllEstudiantesGeneric(): Observable<any> {
+    const token = environment.backendApiToken;
+    return this.getRest$<any>('/rest/estudiante', token);
+  }
+}
+```
+
+**Legacy**: [ApiService](src/app/services/api.ts) is **deprecated** - delegates to UserService. Use domain-specific services instead.
+
+**AuthService vs UserService**:
+- **[AuthService](src/app/services/auth.ts)**: Firebase authentication (signIn, signUp, logout) - KEEP THIS
+- **[UserService](src/app/services/user.service.ts)**: Backend user data management - USE THIS for backend data
+- Components handle syncing: after Firebase auth, call `UserService.registerUser()` to sync with backend
 
 ## Theming System
 

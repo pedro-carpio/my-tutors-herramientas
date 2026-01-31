@@ -21,7 +21,6 @@ import {
   updateProfile,
 } from '@angular/fire/auth';
 import { Observable, from } from 'rxjs';
-
 export interface AuthUser {
   uid: string;
   email: string | null;
@@ -39,7 +38,7 @@ export class AuthService {
   private injector = inject(Injector);
 
   // Signal para el usuario actual
-  protected readonly currentUser = signal<AuthUser | null>(null);
+  public readonly currentUser = signal<AuthUser | null>(null);
   public readonly loading = signal<boolean>(true);
 
   constructor() {
@@ -75,6 +74,7 @@ export class AuthService {
 
   /**
    * Registro con email y contraseña
+   * NOTA: Login/Register components manejan el registro en backend
    */
   signUp(email: string, password: string, displayName?: string): Observable<UserCredential> {
     const promise = createUserWithEmailAndPassword(this.auth, email, password).then(
@@ -85,6 +85,7 @@ export class AuthService {
         return credential;
       },
     );
+
     return from(promise);
   }
 
@@ -97,6 +98,7 @@ export class AuthService {
 
   /**
    * Inicio de sesión con Google (usando popup con custom parameters)
+   * NOTA: Login/Register components manejan el registro en backend
    */
   signInWithGoogle(): Observable<UserCredential> {
     const provider = new GoogleAuthProvider();
@@ -104,6 +106,7 @@ export class AuthService {
     provider.setCustomParameters({
       prompt: 'select_account',
     });
+
     return from(runInInjectionContext(this.injector, () => signInWithPopup(this.auth, provider)));
   }
 
@@ -138,15 +141,27 @@ export class AuthService {
   private initAuthListener(): void {
     onAuthStateChanged(this.auth, (user: User | null) => {
       if (user) {
-        this.currentUser.set({
+        const authUser: AuthUser = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
           emailVerified: user.emailVerified,
+        };
+        this.currentUser.set(authUser);
+
+        // Mostrar información del usuario en consola
+        console.log('🔐 Usuario autenticado:');
+        console.table({
+          UID: authUser.uid,
+          Email: authUser.email || 'N/A',
+          Nombre: authUser.displayName || 'Sin nombre',
+          Foto: authUser.photoURL || 'Sin foto',
+          'Email verificado': authUser.emailVerified ? '✓ Sí' : '✗ No',
         });
       } else {
         this.currentUser.set(null);
+        console.log('🚪 Usuario cerró sesión');
       }
       this.loading.set(false);
     });

@@ -1,7 +1,13 @@
 // Configuración de Firebase para desarrollo
+// Importa el secreto de environment.local.ts (archivo en .gitignore)
+
+import { environment as localEnv } from './environment.local';
 
 export const environment = {
   production: false,
+  apiUrl: 'https://d1-rest.pedrocarpiom.workers.dev',
+  // El secreto viene de environment.local.ts
+  backendApiToken: localEnv.backendApiToken,
   firebase: {
     apiKey: 'AIzaSyCX4VHkF_0I0panYDHPr3mBvOnLlhxiKtA',
     authDomain: 'my-tutors-herramientas.firebaseapp.com',

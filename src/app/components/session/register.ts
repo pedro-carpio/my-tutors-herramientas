@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth';
+import { UserService } from '../../services/user.service';
+import { catchError, of } from 'rxjs';
 
 @Component({
   selector: 'app-register',
@@ -111,6 +113,7 @@ import { AuthService } from '../../services/auth';
 })
 export class Register {
   private authService = inject(AuthService);
+  private userService = inject(UserService);
   private router = inject(Router);
 
   protected displayName = '';
@@ -130,8 +133,20 @@ export class Register {
     this.errorMessage.set('');
 
     this.authService.signUp(this.email, this.password, this.displayName).subscribe({
-      next: () => {
-        this.router.navigate(['/']);
+      next: (credential) => {
+        // Sincronizar con backend
+        this.userService
+          .registerUser(credential.user.uid, credential.user.email, credential.user.displayName)
+          .pipe(
+            catchError((error) => {
+              console.error('❌ Error al registrar en backend:', error);
+              // Aún así, permitir continuar - el usuario está en Firebase
+              return of(null);
+            }),
+          )
+          .subscribe(() => {
+            this.router.navigate(['/inicio']);
+          });
       },
       error: (error) => {
         this.loading.set(false);
@@ -145,8 +160,23 @@ export class Register {
     this.errorMessage.set('');
 
     this.authService.signInWithGoogle().subscribe({
-      next: () => {
-        this.router.navigate(['/']);
+      next: (credential) => {
+        // Sincronizar con backend
+        this.userService
+          .registerUser(credential.user.uid, credential.user.email, credential.user.displayName)
+          .pipe(
+            catchError((error) => {
+              if (error.status === 409) {
+                console.log('✅ Usuario ya existe en backend');
+              } else {
+                console.error('❌ Error al registrar en backend:', error);
+              }
+              return of(null);
+            }),
+          )
+          .subscribe(() => {
+            this.router.navigate(['/inicio']);
+          });
       },
       error: (error) => {
         this.loading.set(false);

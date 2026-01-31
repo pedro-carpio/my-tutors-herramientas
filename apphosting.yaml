@@ -1,0 +1,19 @@
+# Firebase App Hosting configuration
+# Configures environment variables and secrets for the backend API integration
+
+runConfig:
+  # Configure environment variables available at runtime
+  environmentVariables:
+    # Backend API base URL (Cloudflare Worker)
+    API_URL: https://d1-rest.pedrocarpiom.workers.dev
+
+  # Configure secrets from Google Cloud Secret Manager
+  # These are injected as environment variables at runtime
+  secrets:
+    # Bearer token for backend authentication
+    # Maps to: projects/290666670570/secrets/backend-my-awesome-tutor
+    BACKEND_API_TOKEN: backend-my-awesome-tutor
+
+# Angular SSR configuration
+# The backend token will be available via process.env.BACKEND_API_TOKEN
+# Use it in server-side API calls for authentication

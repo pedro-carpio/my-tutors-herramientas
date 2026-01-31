@@ -2,6 +2,13 @@
 
 export const environment = {
   production: true,
+  apiUrl: 'https://d1-rest.pedrocarpiom.workers.dev',
+  // En producción, el secreto viene de Google Cloud Secret Manager
+  // via process.env.BACKEND_API_TOKEN (inyectado por apphosting.yaml)
+  backendApiToken:
+    typeof process !== 'undefined' && process.env?.['BACKEND_API_TOKEN']
+      ? process.env['BACKEND_API_TOKEN']
+      : '',
   firebase: {
     apiKey: 'AIzaSyCX4VHkF_0I0panYDHPr3mBvOnLlhxiKtA',
     authDomain: 'my-tutors-herramientas.firebaseapp.com',

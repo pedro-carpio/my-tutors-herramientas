@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth';
+import { UserService } from '../../services/user.service';
+import { catchError, of } from 'rxjs';
 
 @Component({
   selector: 'app-login',
@@ -82,6 +84,7 @@ import { AuthService } from '../../services/auth';
 })
 export class Login {
   private authService = inject(AuthService);
+  private userService = inject(UserService);
   private router = inject(Router);
 
   protected email = '';
@@ -109,8 +112,24 @@ export class Login {
     this.errorMessage.set('');
 
     this.authService.signInWithGoogle().subscribe({
-      next: () => {
-        this.router.navigate(['/']);
+      next: (credential) => {
+        // Sincronizar con backend (registrar si es primera vez)
+        this.userService
+          .registerUser(credential.user.uid, credential.user.email, credential.user.displayName)
+          .pipe(
+            catchError((error) => {
+              // Si error 409, usuario ya existe - continuar normalmente
+              if (error.status === 409) {
+                console.log('✅ Usuario ya existe en backend');
+              } else {
+                console.error('❌ Error al sincronizar con backend:', error);
+              }
+              return of(null);
+            }),
+          )
+          .subscribe(() => {
+            this.router.navigate(['/inicio']);
+          });
       },
       error: (error) => {
         this.loading.set(false);
