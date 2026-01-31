@@ -76,27 +76,31 @@ export class UserService extends HttpService {
    * - Nombres se capitalizan correctamente
    * - Devuelve JWT firmado por el backend
    *
-   * @param firebase_uid - UID del usuario en Firebase Auth
+   * @param firebaseIdToken - Firebase ID Token obtenido después de autenticar
    * @param email - Email del usuario
    * @param displayName - Nombre completo del usuario
    */
   registerUser(
-    firebase_uid: string,
+    firebaseIdToken: string,
     email: string | null,
     displayName: string | null,
   ): Observable<RegisterUserResponse> {
-    const payload: RegisterUserRequest = {
-      firebase_uid,
+    const payload = {
       email: email || undefined,
       full_name: displayName ? this.capitalizeName(displayName) : undefined,
       role_id: 2, // teacher por defecto
       is_active: 0, // no activo hasta que admin apruebe
     };
 
-    console.log('📤 Registrando usuario en backend:', payload);
+    console.log('📤 Registrando usuario en backend');
 
-    // requireAuth: false porque el usuario aún no tiene JWT
-    return this.post$<RegisterUserResponse>('/user/register', payload, false);
+    // Envía Firebase ID Token en header X-Firebase-ID-Token
+    // El backend extrae y valida el firebase_uid del token
+    return this.postWithFirebaseToken$<RegisterUserResponse>(
+      '/user/register',
+      payload,
+      firebaseIdToken,
+    );
   }
 
   /**
@@ -107,13 +111,14 @@ export class UserService extends HttpService {
    * 2. Verificar que está activo (is_active = 1)
    * 3. Obtener JWT firmado para requests subsecuentes
    *
-   * @param firebase_uid - UID del usuario autenticado en Firebase
+   * @param firebaseIdToken - Firebase ID Token obtenido después de autenticar
    */
-  loginUser(firebase_uid: string): Observable<LoginUserResponse> {
-    console.log('🔐 Solicitando JWT del backend para:', firebase_uid);
+  loginUser(firebaseIdToken: string): Observable<LoginUserResponse> {
+    console.log('🔐 Solicitando JWT del backend');
 
-    // requireAuth: false porque el usuario aún no tiene JWT
-    return this.post$<LoginUserResponse>('/user/login', { firebase_uid }, false);
+    // Envía Firebase ID Token en header X-Firebase-ID-Token
+    // El backend extrae y valida el firebase_uid del token
+    return this.postWithFirebaseToken$<LoginUserResponse>('/user/login', {}, firebaseIdToken);
   }
 
   /**

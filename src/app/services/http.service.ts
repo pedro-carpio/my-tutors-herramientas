@@ -114,6 +114,27 @@ export class HttpService {
   }
 
   /**
+   * Wrapper para llamadas POST con Firebase ID Token
+   * Usado por /user/register y /user/login - NO requiere BACKEND_API_TOKEN
+   * @param url - Ruta del endpoint
+   * @param body - Cuerpo de la petición
+   * @param firebaseIdToken - Firebase ID Token del usuario autenticado
+   */
+  protected postWithFirebaseToken$<T>(
+    url: string,
+    body: any,
+    firebaseIdToken: string,
+  ): Observable<T> {
+    this.ensureBrowser();
+    return this.http.post<T>(`${this.apiUrl}${url}`, body, {
+      headers: new HttpHeaders({
+        'X-Firebase-ID-Token': firebaseIdToken,
+        'Content-Type': 'application/json',
+      }),
+    });
+  }
+
+  /**
    * Wrapper para llamadas PATCH con verificación de plataforma
    */
   protected patch$<T>(url: string, body: any): Observable<T> {

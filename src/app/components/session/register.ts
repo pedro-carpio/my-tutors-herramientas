@@ -162,28 +162,37 @@ export class Register {
     this.errorMessage.set('');
 
     this.authService.signInWithGoogle().subscribe({
-      next: (credential) => {
-        // Sincronizar con backend
-        this.userService
-          .registerUser(credential.user.uid, credential.user.email, credential.user.displayName)
-          .pipe(
-            catchError((error) => {
-              if (error.status === 409) {
-                console.log('✅ Usuario ya existe en backend');
-              } else {
-                console.error('❌ Error al registrar en backend:', error);
+      next: async (credential) => {
+        try {
+          // Obtener Firebase ID Token del usuario autenticado
+          const idToken = await credential.user.getIdToken();
+
+          // Sincronizar con backend
+          this.userService
+            .registerUser(idToken, credential.user.email, credential.user.displayName)
+            .pipe(
+              catchError((error) => {
+                if (error.status === 409) {
+                  console.log('✅ Usuario ya existe en backend');
+                } else {
+                  console.error('❌ Error al registrar en backend:', error);
+                }
+                return of(null);
+              }),
+            )
+            .subscribe((response) => {
+              // Guardar el JWT si el registro fue exitoso
+              if (response && response.token) {
+                this.tokenStorage.saveToken(response.token);
+                console.log('✅ JWT guardado después del registro');
               }
-              return of(null);
-            }),
-          )
-          .subscribe((response) => {
-            // Guardar el JWT si el registro fue exitoso
-            if (response && response.token) {
-              this.tokenStorage.saveToken(response.token);
-              console.log('✅ JWT guardado después del registro');
-            }
-            this.router.navigate(['/inicio']);
-          });
+              this.router.navigate(['/inicio']);
+            });
+        } catch (error) {
+          console.error('❌ Error obteniendo ID Token:', error);
+          this.loading.set(false);
+          this.errorMessage.set('Error al obtener token de autenticación');
+        }
       },
       error: (error) => {
         this.loading.set(false);
