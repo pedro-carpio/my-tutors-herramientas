@@ -116,47 +116,53 @@ export class Login {
     this.authService.signInWithGoogle().subscribe({
       next: (credential) => {
         // Primero intentar login (usuario existente)
-        this.userService.loginUser(credential.user.uid).pipe(
-          catchError((loginError) => {
-            // Si usuario no existe (404), registrarlo
-            if (loginError.status === 404) {
-              console.log('ℹ️ Usuario no existe, registrando...');
-              return this.userService.registerUser(
-                credential.user.uid,
-                credential.user.email,
-                credential.user.displayName
-              );
-            }
-            // Si es error 403 (inactivo), mostrar mensaje
-            if (loginError.status === 403) {
-              this.loading.set(false);
-              this.errorMessage.set('Tu cuenta está pendiente de activación. Contacta al administrador.');
+        this.userService
+          .loginUser(credential.user.uid)
+          .pipe(
+            catchError((loginError) => {
+              // Si usuario no existe (404), registrarlo
+              if (loginError.status === 404) {
+                console.log('ℹ️ Usuario no existe, registrando...');
+                return this.userService.registerUser(
+                  credential.user.uid,
+                  credential.user.email,
+                  credential.user.displayName,
+                );
+              }
+              // Si es error 403 (inactivo), mostrar mensaje
+              if (loginError.status === 403) {
+                this.loading.set(false);
+                this.errorMessage.set(
+                  'Tu cuenta está pendiente de activación. Contacta al administrador.',
+                );
+                throw loginError;
+              }
+              // Cualquier otro error, re-lanzar
               throw loginError;
-            }
-            // Cualquier otro error, re-lanzar
-            throw loginError;
-          })
-        ).subscribe({
-          next: (response) => {
-            // Guardar el JWT (viene de login o register)
-            if (response && response.token) {
-              this.tokenStorage.saveToken(response.token);
-              console.log('✅ JWT guardado después de autenticación');
-              this.router.navigate(['/inicio']);
-            } else {
-              console.error('❌ No se recibió token del backend');
-              this.loading.set(false);
-              this.errorMessage.set('Error al autenticar con el backend');
-            }
-          },
-          error: (error) => {
-            if (error.status !== 403) { // 403 ya se manejó arriba
-              this.loading.set(false);
-              this.errorMessage.set('Error al autenticar. Intenta de nuevo.');
-              console.error('❌ Error en autenticación:', error);
-            }
-          }
-        });
+            }),
+          )
+          .subscribe({
+            next: (response) => {
+              // Guardar el JWT (viene de login o register)
+              if (response && response.token) {
+                this.tokenStorage.saveToken(response.token);
+                console.log('✅ JWT guardado después de autenticación');
+                this.router.navigate(['/inicio']);
+              } else {
+                console.error('❌ No se recibió token del backend');
+                this.loading.set(false);
+                this.errorMessage.set('Error al autenticar con el backend');
+              }
+            },
+            error: (error) => {
+              if (error.status !== 403) {
+                // 403 ya se manejó arriba
+                this.loading.set(false);
+                this.errorMessage.set('Error al autenticar. Intenta de nuevo.');
+                console.error('❌ Error en autenticación:', error);
+              }
+            },
+          });
       },
       error: (error) => {
         this.loading.set(false);
