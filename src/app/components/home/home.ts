@@ -151,16 +151,16 @@ export class Home implements OnInit {
       return;
     }
 
-    this.loadUserProfile(user.uid);
-    this.loadCursos(user.uid);
+    this.loadUserProfile();
+    this.loadCursos();
   }
 
-  private loadUserProfile(firebaseUid: string): void {
+  private loadUserProfile(): void {
     this.loadingProfile.set(true);
     this.profileError.set('');
 
     this.userService
-      .getUserByFirebaseUid(firebaseUid)
+      .getCurrentUser()
       .pipe(
         catchError((error) => {
           this.profileError.set(
@@ -179,12 +179,12 @@ export class Home implements OnInit {
       });
   }
 
-  private loadCursos(firebaseUid: string): void {
+  private loadCursos(): void {
     this.loadingCursos.set(true);
     this.cursosError.set('');
 
     this.cursoService
-      .getCursos(firebaseUid)
+      .getCursos()
       .pipe(
         catchError((error) => {
           this.cursosError.set('Error al cargar cursos');

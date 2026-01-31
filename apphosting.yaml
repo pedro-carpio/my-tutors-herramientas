@@ -8,11 +8,16 @@ runConfig:
     API_URL: https://d1-rest.pedrocarpiom.workers.dev
 
   # Configure secrets from Google Cloud Secret Manager
-  # These are injected as environment variables at runtime
+  # Estos secretos NO se exponen al browser - solo están disponibles en server-side rendering
   secrets:
     # Bearer token for backend authentication
     # Maps to: projects/290666670570/secrets/backend-my-awesome-tutor
     BACKEND_API_TOKEN: backend-my-awesome-tutor
+
+# ARQUITECTURA DE SEGURIDAD:
+# El secreto BACKEND_API_TOKEN NO se incluye en el JavaScript bundle del browser
+# El backend genera y firma los JWTs - el frontend solo los almacena y usa
+# Los JWTs contienen el firebase_uid y son verificados por el backend en cada request
 
 # Angular SSR configuration
 # The backend token will be available via process.env.BACKEND_API_TOKEN

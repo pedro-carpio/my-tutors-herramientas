@@ -72,7 +72,9 @@ export interface DeleteCursoResponse {
  * - PATCH /curso/:id - Actualiza un curso existente
  * - DELETE /curso/:id - Elimina un curso (solo admin)
  *
- * NOTA: El backend usa rutas personalizadas en /curso, no /rest/curso
+ * AUTENTICACIÓN:
+ * - Usa JWT almacenado en localStorage (generado por backend)
+ * - No requiere pasar firebase_uid en los métodos
  */
 @Injectable({
   providedIn: 'root',
@@ -85,21 +87,20 @@ export class CursoService extends HttpService {
    * - Admin: ve todos los cursos
    * - Teacher: solo ve sus cursos (donde es docente)
    *
-   * @param firebaseUid - UID del usuario autenticado en Firebase
+   * La identidad del usuario está en el JWT almacenado en localStorage
    */
-  getCursos(firebaseUid: string): Observable<GetCursosResponse> {
-    console.log('🔍 Obteniendo cursos del usuario:', firebaseUid);
-    return this.get$<GetCursosResponse>('/curso', firebaseUid);
+  getCursos(): Observable<GetCursosResponse> {
+    console.log('🔍 Obteniendo cursos del usuario autenticado');
+    return this.get$<GetCursosResponse>('/curso');
   }
 
   /**
    * Obtiene un curso específico por ID
    *
    * @param cursoId - ID del curso
-   * @param firebaseUid - UID del usuario autenticado
    */
-  getCursoById(cursoId: number, firebaseUid: string): Observable<Curso> {
-    return this.get$<Curso>(`/curso/${cursoId}`, firebaseUid);
+  getCursoById(cursoId: number): Observable<Curso> {
+    return this.get$<Curso>(`/curso/${cursoId}`);
   }
 
   /**
@@ -110,11 +111,10 @@ export class CursoService extends HttpService {
    * - Admins pueden asignar a cualquier docente
    *
    * @param request - Datos del curso a crear
-   * @param firebaseUid - UID del usuario autenticado
    */
-  createCurso(request: CreateCursoRequest, firebaseUid: string): Observable<CreateCursoResponse> {
+  createCurso(request: CreateCursoRequest): Observable<CreateCursoResponse> {
     console.log('➕ Creando curso:', request);
-    return this.post$<CreateCursoResponse>('/curso', request, firebaseUid);
+    return this.post$<CreateCursoResponse>('/curso', request, true);
   }
 
   /**
@@ -126,15 +126,10 @@ export class CursoService extends HttpService {
    *
    * @param cursoId - ID del curso a actualizar
    * @param request - Datos a actualizar
-   * @param firebaseUid - UID del usuario autenticado
    */
-  updateCurso(
-    cursoId: number,
-    request: UpdateCursoRequest,
-    firebaseUid: string,
-  ): Observable<UpdateCursoResponse> {
+  updateCurso(cursoId: number, request: UpdateCursoRequest): Observable<UpdateCursoResponse> {
     console.log(`✏️ Actualizando curso ${cursoId}:`, request);
-    return this.patch$<UpdateCursoResponse>(`/curso/${cursoId}`, request, firebaseUid);
+    return this.patch$<UpdateCursoResponse>(`/curso/${cursoId}`, request);
   }
 
   /**
@@ -144,11 +139,10 @@ export class CursoService extends HttpService {
    * RESTRICCIÓN: No se puede eliminar si tiene estudiantes asignados
    *
    * @param cursoId - ID del curso a eliminar
-   * @param firebaseUid - UID del usuario autenticado (debe ser admin)
    */
-  deleteCurso(cursoId: number, firebaseUid: string): Observable<DeleteCursoResponse> {
+  deleteCurso(cursoId: number): Observable<DeleteCursoResponse> {
     console.log(`🗑️ Eliminando curso ${cursoId}`);
-    return this.delete$<DeleteCursoResponse>(`/curso/${cursoId}`, firebaseUid);
+    return this.delete$<DeleteCursoResponse>(`/curso/${cursoId}`);
   }
 
   /**
@@ -160,9 +154,7 @@ export class CursoService extends HttpService {
    */
   getCursosGeneric(): Observable<any> {
     console.log('🔍 [TEST] Obteniendo cursos via /rest/curso (sin filtro de usuario)');
-    const backendToken = environment.apiUrl.includes('127.0.0.1')
-      ? environment.backendApiToken
-      : environment.backendApiToken;
+    const backendToken = environment.backendApiToken;
     return this.getRest$<any>('/rest/curso', backendToken);
   }
 }

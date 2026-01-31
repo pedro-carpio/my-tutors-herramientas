@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth';
 import { UserService } from '../../services/user.service';
+import { TokenStorageService } from '../../services/token-storage.service';
 import { catchError, of } from 'rxjs';
 
 @Component({
@@ -114,6 +115,7 @@ import { catchError, of } from 'rxjs';
 export class Register {
   private authService = inject(AuthService);
   private userService = inject(UserService);
+  private tokenStorage = inject(TokenStorageService);
   private router = inject(Router);
 
   protected displayName = '';
@@ -174,7 +176,12 @@ export class Register {
               return of(null);
             }),
           )
-          .subscribe(() => {
+          .subscribe((response) => {
+            // Guardar el JWT si el registro fue exitoso
+            if (response && response.token) {
+              this.tokenStorage.saveToken(response.token);
+              console.log('✅ JWT guardado después del registro');
+            }
             this.router.navigate(['/inicio']);
           });
       },

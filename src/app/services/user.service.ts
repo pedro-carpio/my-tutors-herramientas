@@ -24,6 +24,12 @@ export interface RegisterUserRequest {
 export interface RegisterUserResponse {
   message: string;
   user: BackendUser;
+  token: string; // JWT generado por el backend
+}
+
+export interface LoginUserResponse {
+  user: BackendUser;
+  token: string; // JWT generado por el backend
 }
 
 export interface GetUserResponse {
@@ -68,6 +74,7 @@ export class UserService extends HttpService {
    * - Usuarios auto-registrados son teachers (role_id: 2)
    * - No están activos por defecto (is_active: 0)
    * - Nombres se capitalizan correctamente
+   * - Devuelve JWT firmado por el backend
    *
    * @param firebase_uid - UID del usuario en Firebase Auth
    * @param email - Email del usuario
@@ -92,21 +99,34 @@ export class UserService extends HttpService {
   }
 
   /**
-   * Obtiene información del usuario del backend basado en su Firebase UID
+   * Autentica un usuario existente y obtiene un JWT firmado del backend
    *
-   * @param firebase_uid - UID del usuario en Firebase Auth
+   * Este método debe llamarse después de autenticar con Firebase para:
+   * 1. Validar que el usuario existe en el backend
+   * 2. Verificar que está activo (is_active = 1)
+   * 3. Obtener JWT firmado para requests subsecuentes
+   *
+   * @param firebase_uid - UID del usuario autenticado en Firebase
    */
-  getUserByFirebaseUid(firebase_uid: string): Observable<GetUserResponse> {
-    return this.get$<GetUserResponse>(`/user/me?firebase_uid=${firebase_uid}`, firebase_uid);
+  loginUser(firebase_uid: string): Observable<LoginUserResponse> {
+    console.log('🔐 Solicitando JWT del backend para:', firebase_uid);
+
+    return this.post$<LoginUserResponse>('/user/login', { firebase_uid });
+  }
+
+  /**
+   * Obtiene información del usuario del backend basado en su JWT
+   * El JWT almacenado contiene el firebase_uid
+   */
+  getUserInfo(): Observable<GetUserResponse> {
+    return this.get$<GetUserResponse>('/user/me');
   }
 
   /**
    * Obtiene información del usuario actual autenticado
-   * Alias conveniente para getUserByFirebaseUid
-   *
-   * @param firebase_uid - UID del usuario autenticado
+   * Alias conveniente para getUserInfo
    */
-  getCurrentUser(firebase_uid: string): Observable<GetUserResponse> {
-    return this.getUserByFirebaseUid(firebase_uid);
+  getCurrentUser(): Observable<GetUserResponse> {
+    return this.getUserInfo();
   }
 }
