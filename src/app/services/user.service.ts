@@ -95,7 +95,8 @@ export class UserService extends HttpService {
 
     console.log('📤 Registrando usuario en backend:', payload);
 
-    return this.post$<RegisterUserResponse>('/user/register', payload);
+    // requireAuth: false porque el usuario aún no tiene JWT
+    return this.post$<RegisterUserResponse>('/user/register', payload, false);
   }
 
   /**
@@ -111,7 +112,8 @@ export class UserService extends HttpService {
   loginUser(firebase_uid: string): Observable<LoginUserResponse> {
     console.log('🔐 Solicitando JWT del backend para:', firebase_uid);
 
-    return this.post$<LoginUserResponse>('/user/login', { firebase_uid });
+    // requireAuth: false porque el usuario aún no tiene JWT
+    return this.post$<LoginUserResponse>('/user/login', { firebase_uid }, false);
   }
 
   /**
