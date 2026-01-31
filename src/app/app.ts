@@ -1,7 +1,8 @@
-import { Component, signal, inject } from '@angular/core';
+import { Component, signal, inject, computed } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
 import { ThemeToggle } from './components/shared/theme-toggle';
-import { AuthService } from './services/auth';
+import { TokenStorageService } from './services/token-storage.service';
+import { UserService } from './services/user.service';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -14,14 +15,12 @@ import { CommonModule } from '@angular/common';
         <div class="header-actions">
           <app-theme-toggle />
 
-          @if (authService.isLoading()) {
+          @if (loadingUser()) {
             <span class="loading">Cargando...</span>
-          } @else if (authService.isAuthenticated()) {
+          } @else if (isAuthenticated()) {
             <div class="user-section">
               <span class="user-name">
-                {{
-                  authService.getCurrentUser()?.displayName || authService.getCurrentUser()?.email
-                }}
+                {{ currentUser()?.fullName || currentUser()?.email || 'Usuario' }}
               </span>
               <button class="btn btn-outline" (click)="logout()">
                 <span class="material-icons">logout</span>
@@ -103,20 +102,52 @@ import { CommonModule } from '@angular/common';
   ],
 })
 export class App {
-  protected readonly authService = inject(AuthService);
+  private tokenStorage = inject(TokenStorageService);
+  private userService = inject(UserService);
   private router = inject(Router);
 
   protected readonly title = signal('Mi Cuaderno');
+  protected readonly currentUser = signal<any>(null);
+  protected readonly loadingUser = signal(false);
+
+  protected readonly isAuthenticated = computed(() => this.tokenStorage.hasToken());
+
+  constructor() {
+    // Cargar usuario si hay token
+    if (this.tokenStorage.hasToken()) {
+      this.loadCurrentUser();
+    }
+  }
+
+  /**
+   * Carga información del usuario actual desde el backend
+   * Llamar después de login exitoso para actualizar el UI
+   */
+  loadCurrentUser(): void {
+    this.loadingUser.set(true);
+    this.userService.getCurrentUser().subscribe({
+      next: (response) => {
+        this.currentUser.set(response.user);
+        this.loadingUser.set(false);
+      },
+      error: (error) => {
+        console.error('Error cargando usuario:', error);
+        this.loadingUser.set(false);
+        // Si falla, limpiar token inválido
+        if (error.status === 401) {
+          this.tokenStorage.clearTokens();
+        }
+      },
+    });
+  }
 
   protected goToLogin(): void {
     this.router.navigate(['/login']);
   }
 
   protected logout(): void {
-    this.authService.logout().subscribe({
-      next: () => {
-        this.router.navigate(['/login']);
-      },
-    });
+    this.tokenStorage.clearTokens();
+    this.currentUser.set(null);
+    this.router.navigate(['/login']);
   }
 }

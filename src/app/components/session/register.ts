@@ -2,10 +2,9 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService } from '../../services/auth';
 import { UserService } from '../../services/user.service';
 import { TokenStorageService } from '../../services/token-storage.service';
-import { catchError, of } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-register',
@@ -14,6 +13,10 @@ import { catchError, of } from 'rxjs';
     <div class="form-container">
       <div class="form-card card">
         <h2>Crear Cuenta</h2>
+
+        @if (successMessage()) {
+          <div class="alert success">{{ successMessage() }}</div>
+        }
 
         @if (errorMessage()) {
           <div class="alert error">{{ errorMessage() }}</div>
@@ -34,14 +37,14 @@ import { catchError, of } from 'rxjs';
 
         <form (ngSubmit)="onSubmit()" #registerForm="ngForm">
           <div class="form-group">
-            <label for="displayName">Nombre</label>
+            <label for="fullName">Nombre completo</label>
             <input
               type="text"
-              id="displayName"
-              name="displayName"
-              [(ngModel)]="displayName"
+              id="fullName"
+              name="fullName"
+              [(ngModel)]="fullName"
               required
-              placeholder="Tu nombre"
+              placeholder="Tu nombre completo"
               autocomplete="name"
             />
           </div>
@@ -91,6 +94,18 @@ import { catchError, of } from 'rxjs';
             }
           </div>
 
+          <div class="form-group">
+            <label for="role">Yo soy</label>
+            <select id="role" name="role" [(ngModel)]="selectedRole" required>
+              <option value="2">Maestro/Profesor</option>
+              <option value="3">Director</option>
+              <option value="4">Quiero vender el software</option>
+            </select>
+            <small class="info"
+              >Tu cuenta será revisada por un administrador antes de activarse</small
+            >
+          </div>
+
           <button
             type="submit"
             class="btn btn-primary full-width"
@@ -110,20 +125,90 @@ import { catchError, of } from 'rxjs';
       </div>
     </div>
   `,
-  styles: [],
+  styles: [
+    `
+      .login-with-google-btn {
+        width: 100%;
+        padding: 12px 24px;
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        font-weight: 500;
+        color: var(--text-color);
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        text-align: center;
+        text-decoration: none;
+        display: block;
+        margin-bottom: 1.5rem;
+
+        &:hover:not(:disabled) {
+          background-color: #f8f9fa;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        &:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      }
+
+      small.info {
+        display: block;
+        margin-top: 0.5rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+      }
+
+      small.error {
+        display: block;
+        margin-top: 0.5rem;
+        color: var(--error-color);
+        font-size: 0.875rem;
+      }
+    `,
+  ],
 })
 export class Register {
-  private authService = inject(AuthService);
   private userService = inject(UserService);
   private tokenStorage = inject(TokenStorageService);
   private router = inject(Router);
 
-  protected displayName = '';
+  protected fullName = '';
   protected email = '';
   protected password = '';
   protected confirmPassword = '';
+  protected selectedRole = '2';
   protected loading = signal(false);
   protected errorMessage = signal('');
+  protected successMessage = signal('');
+
+  protected signUpWithGoogle(): void {
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+
+    const popup = window.open(
+      `${environment.apiUrl}/auth/google`,
+      'Google Sign In',
+      `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no`,
+    );
+
+    // Monitor popup closure
+    const checkPopup = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(checkPopup);
+
+        // Check if tokens were saved
+        const token = this.tokenStorage.getToken();
+        if (token) {
+          // OAuth successful, redirect to home
+          this.router.navigate(['/inicio']);
+        }
+      }
+    }, 500);
+  }
 
   protected onSubmit(): void {
     if (this.password !== this.confirmPassword) {
@@ -133,86 +218,54 @@ export class Register {
 
     this.loading.set(true);
     this.errorMessage.set('');
+    this.successMessage.set('');
 
-    this.authService.signUp(this.email, this.password, this.displayName).subscribe({
-      next: (credential) => {
-        // Sincronizar con backend
-        this.userService
-          .registerUser(credential.user.uid, credential.user.email, credential.user.displayName)
-          .pipe(
-            catchError((error) => {
-              console.error('❌ Error al registrar en backend:', error);
-              // Aún así, permitir continuar - el usuario está en Firebase
-              return of(null);
-            }),
-          )
-          .subscribe(() => {
-            this.router.navigate(['/inicio']);
-          });
-      },
-      error: (error) => {
-        this.loading.set(false);
-        this.errorMessage.set(this.getErrorMessage(error.code));
-      },
-    });
-  }
-
-  protected signUpWithGoogle(): void {
-    this.loading.set(true);
-    this.errorMessage.set('');
-
-    this.authService.signInWithGoogle().subscribe({
-      next: async (credential) => {
-        try {
-          // Obtener Firebase ID Token del usuario autenticado
-          const idToken = await credential.user.getIdToken();
-
-          // Sincronizar con backend
-          this.userService
-            .registerUser(idToken, credential.user.email, credential.user.displayName)
-            .pipe(
-              catchError((error) => {
-                if (error.status === 409) {
-                  console.log('✅ Usuario ya existe en backend');
-                } else {
-                  console.error('❌ Error al registrar en backend:', error);
-                }
-                return of(null);
-              }),
-            )
-            .subscribe((response) => {
-              // Guardar el JWT si el registro fue exitoso
-              if (response && response.token) {
-                this.tokenStorage.saveToken(response.token);
-                console.log('✅ JWT guardado después del registro');
-              }
-              this.router.navigate(['/inicio']);
-            });
-        } catch (error) {
-          console.error('❌ Error obteniendo ID Token:', error);
+    this.userService
+      .registerUser({
+        email: this.email,
+        password: this.password,
+        full_name: this.fullName,
+        role_id: parseInt(this.selectedRole),
+      })
+      .subscribe({
+        next: (response) => {
           this.loading.set(false);
-          this.errorMessage.set('Error al obtener token de autenticación');
-        }
-      },
-      error: (error) => {
-        this.loading.set(false);
-        this.errorMessage.set(this.getErrorMessage(error.code));
-      },
-    });
-  }
 
-  private getErrorMessage(code: string): string {
-    switch (code) {
-      case 'auth/email-already-in-use':
-        return 'Este email ya está registrado';
-      case 'auth/invalid-email':
-        return 'Email inválido';
-      case 'auth/weak-password':
-        return 'La contraseña debe tener al menos 6 caracteres';
-      case 'auth/network-request-failed':
-        return 'Error de conexión. Verifica tu internet';
-      default:
-        return 'Error al crear cuenta. Intenta de nuevo';
-    }
+          // Verificar si el usuario fue activado automáticamente
+          if (response.user.is_active) {
+            this.successMessage.set('¡Cuenta creada y activada! Redirigiendo al login...');
+            setTimeout(() => {
+              this.router.navigate(['/login']);
+            }, 2000);
+          } else {
+            this.successMessage.set(
+              'Cuenta creada exitosamente. Un administrador debe activar tu cuenta antes de que puedas iniciar sesión.',
+            );
+            // Limpiar el formulario
+            this.fullName = '';
+            this.email = '';
+            this.password = '';
+            this.confirmPassword = '';
+            this.selectedRole = '2';
+          }
+
+          console.log('✅ Registro exitoso:', response);
+        },
+        error: (error) => {
+          this.loading.set(false);
+
+          if (error.status === 409) {
+            this.errorMessage.set('Este email ya está registrado');
+          } else if (error.status === 400) {
+            this.errorMessage.set(error.error?.error || 'Datos inválidos. Verifica el formulario');
+          } else if (error.status === 0) {
+            this.errorMessage.set('Error de conexión. Verifica tu internet');
+          } else {
+            this.errorMessage.set(error.error?.error || 'Error al crear cuenta. Intenta de nuevo');
+          }
+
+          console.error('❌ Error en registro:', error);
+        },
+      });
   }
 }

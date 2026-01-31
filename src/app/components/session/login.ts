@@ -2,10 +2,10 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService } from '../../services/auth';
 import { UserService } from '../../services/user.service';
 import { TokenStorageService } from '../../services/token-storage.service';
-import { catchError, of } from 'rxjs';
+import { environment } from '../../../environments/environment';
+import { App } from '../../app';
 
 @Component({
   selector: 'app-login',
@@ -81,117 +81,114 @@ import { catchError, of } from 'rxjs';
       </div>
     </div>
   `,
-  styles: [],
+  styles: [
+    `
+      .login-with-google-btn {
+        width: 100%;
+        padding: 12px 24px;
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        font-weight: 500;
+        color: var(--text-color);
+        cursor: pointer;
+        transition:
+          background-color 0.2s ease,
+          box-shadow 0.2s ease;
+        text-align: center;
+        text-decoration: none;
+        display: block;
+        margin-bottom: 1.5rem;
+
+        &:hover:not(:disabled) {
+          background-color: #f8f9fa;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        &:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      }
+    `,
+  ],
 })
 export class Login {
-  private authService = inject(AuthService);
   private userService = inject(UserService);
   private tokenStorage = inject(TokenStorageService);
   private router = inject(Router);
+  private app = inject(App);
 
+  protected readonly googleOAuthUrl = `${environment.apiUrl}/auth/google`;
   protected email = '';
   protected password = '';
   protected loading = signal(false);
   protected errorMessage = signal('');
 
+  protected signInWithGoogle(): void {
+    const width = 500;
+    const height = 600;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      this.googleOAuthUrl,
+      'Google Sign In',
+      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`,
+    );
+
+    if (!popup) {
+      this.errorMessage.set(
+        'No se pudo abrir la ventana de Google. Verifica que no esté bloqueada por el navegador.',
+      );
+      return;
+    }
+
+    // Monitorear cuando se cierre el popup
+    const checkPopup = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(checkPopup);
+        // Verificar si hay tokens (el usuario completó el OAuth)
+        if (this.tokenStorage.hasToken()) {
+          this.router.navigate(['/inicio']);
+        }
+      }
+    }, 500);
+  }
+
   protected onSubmit(): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
-    this.authService.signIn(this.email, this.password).subscribe({
-      next: () => {
-        this.router.navigate(['/']);
+    this.userService.loginUser({ email: this.email, password: this.password }).subscribe({
+      next: (response) => {
+        // Guardar JWT y refresh token
+        this.tokenStorage.saveToken(response.token);
+        this.tokenStorage.saveRefreshToken(response.refresh_token);
+        console.log('✅ Autenticación exitosa');
+
+        // Cargar usuario para actualizar UI
+        this.app.loadCurrentUser();
+
+        this.router.navigate(['/inicio']);
       },
       error: (error) => {
         this.loading.set(false);
-        this.errorMessage.set(this.getErrorMessage(error.code));
-      },
-    });
-  }
 
-  protected signInWithGoogle(): void {
-    this.loading.set(true);
-    this.errorMessage.set('');
-
-    this.authService.signInWithGoogle().subscribe({
-      next: async (credential) => {
-        try {
-          // Obtener Firebase ID Token del usuario autenticado
-          const idToken = await credential.user.getIdToken();
-
-          // Primero intentar login (usuario existente)
-          this.userService
-            .loginUser(idToken)
-            .pipe(
-              catchError((loginError) => {
-                // Si usuario no existe (404), registrarlo
-                if (loginError.status === 404) {
-                  console.log('ℹ️ Usuario no existe, registrando...');
-                  return this.userService.registerUser(
-                    idToken,
-                    credential.user.email,
-                    credential.user.displayName,
-                  );
-                }
-                // Si es error 403 (inactivo), mostrar mensaje
-                if (loginError.status === 403) {
-                  this.loading.set(false);
-                  this.errorMessage.set(
-                    'Tu cuenta está pendiente de activación. Contacta al administrador.',
-                  );
-                  throw loginError;
-                }
-                // Cualquier otro error, re-lanzar
-                throw loginError;
-              }),
-            )
-            .subscribe({
-              next: (response) => {
-                // Guardar el JWT (viene de login o register)
-                if (response && response.token) {
-                  this.tokenStorage.saveToken(response.token);
-                  console.log('✅ JWT guardado después de autenticación');
-                  this.router.navigate(['/inicio']);
-                } else {
-                  console.error('❌ No se recibió token del backend');
-                  this.loading.set(false);
-                  this.errorMessage.set('Error al autenticar con el backend');
-                }
-              },
-              error: (error) => {
-                if (error.status !== 403) {
-                  // 403 ya se manejó arriba
-                  this.loading.set(false);
-                  this.errorMessage.set('Error al autenticar. Intenta de nuevo.');
-                  console.error('❌ Error en autenticación:', error);
-                }
-              },
-            });
-        } catch (error) {
-          console.error('❌ Error obteniendo ID Token:', error);
-          this.loading.set(false);
-          this.errorMessage.set('Error al obtener token de autenticación');
+        if (error.status === 401) {
+          this.errorMessage.set('Email o contraseña incorrectos');
+        } else if (error.status === 403) {
+          this.errorMessage.set(
+            'Tu cuenta está pendiente de activación. Contacta al administrador.',
+          );
+        } else if (error.status === 0) {
+          this.errorMessage.set('Error de conexión. Verifica tu internet');
+        } else {
+          this.errorMessage.set(error.error?.error || 'Error al iniciar sesión. Intenta de nuevo');
         }
-      },
-      error: (error) => {
-        this.loading.set(false);
-        this.errorMessage.set(this.getErrorMessage(error.code));
+
+        console.error('❌ Error en login:', error);
       },
     });
-  }
-
-  private getErrorMessage(code: string): string {
-    switch (code) {
-      case 'auth/user-not-found':
-      case 'auth/wrong-password':
-      case 'auth/invalid-credential':
-        return 'Email o contraseña incorrectos';
-      case 'auth/too-many-requests':
-        return 'Demasiados intentos. Intenta más tarde';
-      case 'auth/network-request-failed':
-        return 'Error de conexión. Verifica tu internet';
-      default:
-        return 'Error al iniciar sesión. Intenta de nuevo';
-    }
   }
 }

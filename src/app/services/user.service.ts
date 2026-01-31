@@ -4,136 +4,151 @@ import { HttpService } from './http.service';
 
 export interface BackendUser {
   id: number;
-  firebase_uid: string;
-  email: string | null;
+  email: string;
   full_name: string | null;
   role_id: number;
-  role_name?: string;
+  role_name: string;
   is_active: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface RegisterUserRequest {
-  firebase_uid: string;
-  email?: string;
+  email: string;
+  password: string;
   full_name?: string;
-  role_id: number;
-  is_active: number;
+  role_id?: number; // 2=teacher, 3=director, 4=seller
 }
 
 export interface RegisterUserResponse {
   message: string;
   user: BackendUser;
-  token: string; // JWT generado por el backend
+}
+
+export interface LoginUserRequest {
+  email: string;
+  password: string;
 }
 
 export interface LoginUserResponse {
   user: BackendUser;
-  token: string; // JWT generado por el backend
+  token: string; // JWT (1h)
+  refresh_token: string; // Refresh token (100 días)
+  expires_in: string; // "1h"
+}
+
+export interface UserProfileResponse {
+  user: {
+    userId: number;
+    email: string;
+    fullName: string | null;
+    roleId: number;
+    roleName: string;
+    isActive: boolean;
+  };
+}
+
+export interface RefreshTokenRequest {
+  refresh_token: string;
+}
+
+export interface RefreshTokenResponse {
+  token: string;
+  expires_in: string;
 }
 
 export interface GetUserResponse {
-  user: BackendUser;
+  user: {
+    userId: number;
+    email: string;
+    fullName: string | null;
+    roleId: number;
+    roleName: string;
+    isActive: boolean;
+  };
 }
 
 /**
- * Servicio para gestión de usuarios en el backend
- * Extiende HttpService para reutilizar configuración HTTP común
+ * Servicio para gestión de usuarios con autenticación backend directa
+ * Sistema: email/password + OAuth 2.0 (Google)
  */
 @Injectable({
   providedIn: 'root',
 })
 export class UserService extends HttpService {
   /**
-   * Capitaliza correctamente un nombre completo
-   * Ejemplo: "PEDRO CARPIO MONTERO" -> "Pedro Carpio Montero"
+   * Registra un nuevo usuario con email/password
+   *
+   * REGLAS:
+   * - Sin SECRET: crea cuenta inactiva (requiere activación admin)
+   * - Con SECRET: crea cuenta activa (solo para admins)
+   * - Roles disponibles: 2=teacher, 3=director, 4=seller
+   *
+   * @param request - Datos del usuario (email, password, full_name, role_id)
    */
-  private capitalizeName(name: string): string {
-    if (!name) return '';
-
-    return name
-      .toLowerCase()
-      .split(' ')
-      .map((word) => {
-        // Manejar preposiciones y artículos en español
-        const lowercaseWords = ['de', 'del', 'la', 'los', 'las', 'y', 'el'];
-        if (lowercaseWords.includes(word)) {
-          return word;
-        }
-        // Capitalizar primera letra de cada palabra
-        return word.charAt(0).toUpperCase() + word.slice(1);
-      })
-      .join(' ')
-      .trim();
+  registerUser(request: RegisterUserRequest): Observable<RegisterUserResponse> {
+    console.log('📤 Registrando usuario en backend:', {
+      email: request.email,
+      role_id: request.role_id || 2,
+    });
+    return this.post$<RegisterUserResponse>('/user/register', request, false);
   }
 
   /**
-   * Registra un nuevo usuario en el backend
+   * Autentica un usuario con email/password
    *
-   * REGLAS:
-   * - Usuarios auto-registrados son teachers (role_id: 2)
-   * - No están activos por defecto (is_active: 0)
-   * - Nombres se capitalizan correctamente
-   * - Devuelve JWT firmado por el backend
+   * RETORNA:
+   * - JWT (1 hora de validez)
+   * - Refresh token (100 días)
+   * - Información del usuario
    *
-   * @param firebaseIdToken - Firebase ID Token obtenido después de autenticar
-   * @param email - Email del usuario
-   * @param displayName - Nombre completo del usuario
+   * @param request - Credenciales (email, password)
    */
-  registerUser(
-    firebaseIdToken: string,
-    email: string | null,
-    displayName: string | null,
-  ): Observable<RegisterUserResponse> {
-    const payload = {
-      email: email || undefined,
-      full_name: displayName ? this.capitalizeName(displayName) : undefined,
-      role_id: 2, // teacher por defecto
-      is_active: 0, // no activo hasta que admin apruebe
-    };
+  loginUser(request: LoginUserRequest): Observable<LoginUserResponse> {
+    console.log('🔐 Autenticando usuario:', request.email);
+    return this.post$<LoginUserResponse>('/user/login', request, false);
+  }
 
-    console.log('📤 Registrando usuario en backend');
-
-    // Envía Firebase ID Token en header X-Firebase-ID-Token
-    // El backend extrae y valida el firebase_uid del token
-    return this.postWithFirebaseToken$<RegisterUserResponse>(
-      '/user/register',
-      payload,
-      firebaseIdToken,
+  /**
+   * Renueva el JWT usando un refresh token válido
+   *
+   * @param refreshToken - Refresh token obtenido en login
+   */
+  refreshToken(refreshToken: string): Observable<RefreshTokenResponse> {
+    console.log('🔄 Renovando JWT');
+    return this.post$<RefreshTokenResponse>(
+      '/user/refresh-token',
+      { refresh_token: refreshToken },
+      false,
     );
   }
 
   /**
-   * Autentica un usuario existente y obtiene un JWT firmado del backend
-   *
-   * Este método debe llamarse después de autenticar con Firebase para:
-   * 1. Validar que el usuario existe en el backend
-   * 2. Verificar que está activo (is_active = 1)
-   * 3. Obtener JWT firmado para requests subsecuentes
-   *
-   * @param firebaseIdToken - Firebase ID Token obtenido después de autenticar
+   * Obtiene información del usuario actual autenticado
+   * Usa el JWT almacenado en sessionStorage
    */
-  loginUser(firebaseIdToken: string): Observable<LoginUserResponse> {
-    console.log('🔐 Solicitando JWT del backend');
-
-    // Envía Firebase ID Token en header X-Firebase-ID-Token
-    // El backend extrae y valida el firebase_uid del token
-    return this.postWithFirebaseToken$<LoginUserResponse>('/user/login', {}, firebaseIdToken);
-  }
-
-  /**
-   * Obtiene información del usuario del backend basado en su JWT
-   * El JWT almacenado contiene el firebase_uid
-   */
-  getUserInfo(): Observable<GetUserResponse> {
+  getCurrentUser(): Observable<GetUserResponse> {
+    console.log('👤 Obteniendo usuario actual');
     return this.get$<GetUserResponse>('/user/me');
   }
 
   /**
-   * Obtiene información del usuario actual autenticado
-   * Alias conveniente para getUserInfo
+   * Revoca un refresh token específico (logout de un dispositivo)
    */
-  getCurrentUser(): Observable<GetUserResponse> {
-    return this.getUserInfo();
+  revokeToken(refreshToken: string): Observable<{ message: string }> {
+    console.log('🚪 Revocando refresh token');
+    return this.post$<{ message: string }>(
+      '/user/revoke-token',
+      { refresh_token: refreshToken },
+      false,
+    );
+  }
+
+  /**
+   * Cierra todas las sesiones del usuario (requiere JWT)
+   */
+  logoutAll(): Observable<{ message: string }> {
+    console.log('🚪 Cerrando todas las sesiones');
+    return this.delete$<{ message: string }>('/user/logout-all');
   }
 }

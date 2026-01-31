@@ -1,8 +1,8 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { AuthService } from '../../services/auth';
-import { UserService, type BackendUser } from '../../services/user.service';
+import { UserService, type UserProfileResponse } from '../../services/user.service';
 import { CursoService, type Curso } from '../../services/curso.service';
+import { TokenStorageService } from '../../services/token-storage.service';
 import { CommonModule } from '@angular/common';
 import { catchError, of } from 'rxjs';
 
@@ -14,7 +14,7 @@ import { catchError, of } from 'rxjs';
       <header class="dashboard-header">
         <h1>Dashboard</h1>
         <div class="user-info">
-          <span>{{ authUser()?.displayName || authUser()?.email }}</span>
+          <span>{{ backendUser()?.fullName || backendUser()?.email }}</span>
           <button class="btn btn-outline" (click)="onLogout()">Cerrar Sesión</button>
         </div>
       </header>
@@ -28,10 +28,18 @@ import { catchError, of } from 'rxjs';
           } @else if (profileError()) {
             <div class="alert error">{{ profileError() }}</div>
           } @else if (backendUser()) {
-            <pre class="json-display">{{ backendUser() | json }}</pre>
+            <div class="profile-info">
+              <p><strong>Nombre:</strong> {{ backendUser()!.fullName }}</p>
+              <p><strong>Email:</strong> {{ backendUser()!.email }}</p>
+              <p><strong>Rol:</strong> {{ backendUser()!.roleName }}</p>
+              <p>
+                <strong>Estado:</strong>
+                {{ backendUser()!.isActive ? '✅ Activo' : '⏳ Pendiente de activación' }}
+              </p>
+            </div>
           } @else {
             <div class="alert warning">
-              Perfil no encontrado en el backend. Verifica que tu cuenta esté registrada.
+              Perfil no encontrado. Verifica que tu cuenta esté registrada.
             </div>
           }
         </section>
@@ -44,7 +52,20 @@ import { catchError, of } from 'rxjs';
           } @else if (cursosError()) {
             <div class="alert error">{{ cursosError() }}</div>
           } @else if (cursos() && cursos()!.length > 0) {
-            <pre class="json-display">{{ cursos() | json }}</pre>
+            <div class="cursos-list">
+              @for (curso of cursos(); track curso.id) {
+                <div class="curso-card">
+                  <h3>{{ curso.nivel }} - Sección {{ curso.seccion }}</h3>
+                  <p><strong>Unidad Educativa:</strong> {{ curso.unidad_educativa }}</p>
+                  <p><strong>Gestión:</strong> {{ curso.gestion }}</p>
+                  <p>
+                    <strong>Turno:</strong>
+                    {{ curso.turno_manana ? 'Mañana' : '' }}
+                    {{ curso.turno_tarde ? 'Tarde' : '' }}
+                  </p>
+                </div>
+              }
+            </div>
           } @else {
             <div class="alert info">No tienes cursos asignados.</div>
           }
@@ -93,14 +114,32 @@ import { catchError, of } from 'rxjs';
         color: var(--text-primary);
       }
 
-      .json-display {
+      .profile-info p {
+        margin: 0.5rem 0;
+        line-height: 1.6;
+      }
+
+      .cursos-list {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .curso-card {
         background: var(--bg-primary);
         border: 1px solid var(--border-color);
         border-radius: 4px;
         padding: 1rem;
-        overflow-x: auto;
-        font-size: 0.875rem;
-        line-height: 1.5;
+      }
+
+      .curso-card h3 {
+        margin: 0 0 0.5rem 0;
+        color: var(--primary-color);
+      }
+
+      .curso-card p {
+        margin: 0.25rem 0;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
       }
 
       .alert {
@@ -130,13 +169,12 @@ import { catchError, of } from 'rxjs';
   ],
 })
 export class Home implements OnInit {
-  private authService = inject(AuthService);
   private userService = inject(UserService);
   private cursoService = inject(CursoService);
+  private tokenStorage = inject(TokenStorageService);
   private router = inject(Router);
 
-  protected authUser = this.authService.currentUser;
-  protected backendUser = signal<BackendUser | null>(null);
+  protected backendUser = signal<UserProfileResponse['user'] | null>(null);
   protected cursos = signal<Curso[] | null>(null);
 
   protected loadingProfile = signal(false);
@@ -145,8 +183,7 @@ export class Home implements OnInit {
   protected cursosError = signal('');
 
   ngOnInit(): void {
-    const user = this.authUser();
-    if (!user) {
+    if (!this.tokenStorage.hasToken()) {
       this.router.navigate(['/login']);
       return;
     }
@@ -159,14 +196,17 @@ export class Home implements OnInit {
     this.loadingProfile.set(true);
     this.profileError.set('');
 
+    console.log('🔍 Cargando perfil del usuario desde /user/me');
+
     this.userService
       .getCurrentUser()
       .pipe(
         catchError((error) => {
+          console.error('❌ Error al cargar perfil:', error);
           this.profileError.set(
             error.status === 404
               ? 'Perfil no encontrado. Contacta al administrador.'
-              : 'Error al cargar perfil',
+              : `Error al cargar perfil: ${error.message || error.statusText}`,
           );
           return of(null);
         }),
@@ -174,6 +214,7 @@ export class Home implements OnInit {
       .subscribe((response) => {
         this.loadingProfile.set(false);
         if (response) {
+          console.log('✅ Perfil cargado:', response.user);
           this.backendUser.set(response.user);
         }
       });
@@ -183,26 +224,29 @@ export class Home implements OnInit {
     this.loadingCursos.set(true);
     this.cursosError.set('');
 
+    console.log('🔍 Cargando cursos del usuario');
+
     this.cursoService
       .getCursos()
       .pipe(
         catchError((error) => {
-          this.cursosError.set('Error al cargar cursos');
-          console.error('Error al cargar cursos:', error);
+          console.error('❌ Error al cargar cursos:', error);
+          this.cursosError.set(`Error al cargar cursos: ${error.message || error.statusText}`);
           return of(null);
         }),
       )
       .subscribe((response) => {
         this.loadingCursos.set(false);
         if (response) {
+          console.log('✅ Cursos cargados:', response.cursos);
           this.cursos.set(response.cursos);
         }
       });
   }
 
   protected onLogout(): void {
-    this.authService.logout().subscribe(() => {
-      this.router.navigate(['/login']);
-    });
+    console.log('🚪 Cerrando sesión');
+    this.tokenStorage.clearTokens();
+    this.router.navigate(['/login']);
   }
 }

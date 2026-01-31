@@ -151,10 +151,14 @@ export class CursoService extends HttpService {
    * IMPORTANTE: Este endpoint NO filtra por usuario - devuelve TODOS los cursos
    * Usa autenticación general del backend (BACKEND_API_TOKEN)
    * Para filtros por rol (admin ve todos, teacher solo los suyos), usa getCursos()
+   *
+   * NOTA: Actualmente deshabilitado porque getRest$ fue removido de HttpService
    */
-  getCursosGeneric(): Observable<any> {
-    console.log('🔍 [TEST] Obteniendo cursos via /rest/curso (sin filtro de usuario)');
-    const backendToken = environment.backendApiToken;
-    return this.getRest$<any>('/rest/curso', backendToken);
-  }
+  // getCursosGeneric(): Observable<any> {
+  //   console.log('🔍 [TEST] Obteniendo cursos via /rest/curso (sin filtro de usuario)');
+  //   const backendToken = environment.backendApiToken;
+  //   return this.http.get<any>(`${this.apiUrl}/rest/curso`, {
+  //     headers: { Authorization: `Bearer ${backendToken}` }
+  //   });
+  // }
 }

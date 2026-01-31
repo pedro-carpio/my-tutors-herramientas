@@ -1,30 +1,16 @@
 import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
-import { AuthService } from '../services/auth';
-import { map } from 'rxjs/operators';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { TokenStorageService } from '../services/token-storage.service';
 
 /**
  * Guard para la ruta raíz que redirige según el estado de autenticación
- * Autenticado → /inicio
+ * Autenticado (tiene JWT) → /inicio
  * No autenticado → /anuncio
  */
 export const rootGuard: CanActivateFn = () => {
-  const authService = inject(AuthService);
+  const tokenStorage = inject(TokenStorageService);
   const router = inject(Router);
 
-  // Si aún está cargando, esperar
-  if (authService.isLoading()) {
-    return toObservable(authService.loading).pipe(
-      map((loading) => {
-        if (loading) {
-          return false;
-        }
-        return router.createUrlTree([authService.isAuthenticated() ? '/inicio' : '/anuncio']);
-      }),
-    );
-  }
-
-  // Si ya cargó, redirigir según autenticación
-  return router.createUrlTree([authService.isAuthenticated() ? '/inicio' : '/anuncio']);
+  const targetRoute = tokenStorage.hasToken() ? '/inicio' : '/anuncio';
+  return router.createUrlTree([targetRoute]);
 };
