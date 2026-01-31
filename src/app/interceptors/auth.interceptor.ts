@@ -9,11 +9,19 @@ import { environment } from '../../environments/environment';
  * Interceptor HTTP para manejar autenticación y refresh token automático
  *
  * FUNCIONES:
- * 1. Añade JWT automáticamente a todas las requests
+ * 1. Añade JWT automáticamente a todas las requests (excepto endpoints públicos)
  * 2. Detecta errores 401 (JWT expirado)
- * 3. Intenta renovar JWT con refresh token
+ * 3. Intenta renovar JWT automáticamente con refresh token
  * 4. Reintenta la request original con el nuevo JWT
- * 5. Si el refresh falla, limpia tokens y redirige a login
+ * 5. Si el refresh falla (token expirado/revocado), limpia tokens y redirige a login
+ *
+ * FLUJO DE RENOVACIÓN:
+ * Request → 401 Error → Refresh Token Request → Nuevo JWT → Retry Request Original
+ *
+ * PERSISTENCIA ENTRE PESTAÑAS:
+ * - JWT y refresh token están en localStorage (persisten entre pestañas)
+ * - Al abrir nueva pestaña, el usuario sigue autenticado
+ * - Si el JWT expiró, se renueva automáticamente en la primera request
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const tokenStorage = inject(TokenStorageService);
@@ -31,22 +39,25 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     authReq = req.clone({
       headers: req.headers.set('Authorization', `Bearer ${token}`),
     });
+    console.log('🔐 JWT añadido a request:', req.url);
   }
 
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
       // Si es 401 y NO es un endpoint público, intentar refresh
       if (error.status === 401 && !isPublicEndpoint) {
-        console.log('🔄 JWT expirado, intentando renovar...');
+        console.log('⚠️ [Interceptor] JWT expirado (401), intentando renovar...');
 
         const refreshToken = tokenStorage.getRefreshToken();
 
         if (!refreshToken) {
-          console.log('❌ No hay refresh token, redirigiendo a login');
+          console.log('❌ [Interceptor] No hay refresh token, sesión expirada');
           tokenStorage.clearTokens();
           window.location.href = '/login';
           return throwError(() => error);
         }
+
+        console.log('🔄 [Interceptor] Renovando JWT con refresh token...');
 
         // Intentar renovar el JWT
         return http
@@ -61,7 +72,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           )
           .pipe(
             switchMap((response) => {
-              console.log('✅ JWT renovado exitosamente');
+              console.log('✅ [Interceptor] JWT renovado exitosamente');
               tokenStorage.saveToken(response.token);
 
               // Reintentar la request original con el nuevo token
@@ -69,10 +80,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
                 headers: req.headers.set('Authorization', `Bearer ${response.token}`),
               });
 
+              console.log('🔄 [Interceptor] Reintentando request original con nuevo JWT');
               return next(retryReq);
             }),
             catchError((refreshError) => {
-              console.log('❌ Error al renovar JWT, limpiando sesión');
+              console.error('❌ [Interceptor] Error al renovar JWT:', refreshError);
+              console.log('🚪 [Interceptor] Refresh token expirado/revocado, limpiando sesión');
               tokenStorage.clearTokens();
               window.location.href = '/login';
               return throwError(() => refreshError);

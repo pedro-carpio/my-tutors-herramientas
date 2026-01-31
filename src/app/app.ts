@@ -110,32 +110,52 @@ export class App {
   protected readonly currentUser = signal<any>(null);
   protected readonly loadingUser = signal(false);
 
-  protected readonly isAuthenticated = computed(() => this.tokenStorage.hasToken());
+  protected readonly isAuthenticated = computed(() => {
+    return this.tokenStorage.hasToken() && this.currentUser() !== null;
+  });
 
   constructor() {
-    // Cargar usuario si hay token
+    console.log('🔵 [App] Inicializando aplicación');
+
+    // Cargar usuario si hay token al iniciar la app
     if (this.tokenStorage.hasToken()) {
+      console.log('🔵 [App] Token encontrado, cargando usuario...');
       this.loadCurrentUser();
+    } else {
+      console.log('🔵 [App] No hay token guardado');
     }
   }
 
   /**
    * Carga información del usuario actual desde el backend
    * Llamar después de login exitoso para actualizar el UI
+   *
+   * El interceptor HTTP manejará automáticamente:
+   * - Añadir el JWT a la request
+   * - Renovar el JWT si está expirado (usando refresh token)
+   * - Limpiar tokens y redirigir si el refresh falla
    */
   loadCurrentUser(): void {
+    console.log('👤 Obteniendo usuario actual');
     this.loadingUser.set(true);
+
     this.userService.getCurrentUser().subscribe({
       next: (response) => {
+        console.log('✅ Perfil cargado:', response.user);
         this.currentUser.set(response.user);
         this.loadingUser.set(false);
       },
       error: (error) => {
-        console.error('Error cargando usuario:', error);
+        console.error('❌ Error cargando usuario:', error);
         this.loadingUser.set(false);
-        // Si falla, limpiar token inválido
+
+        // Si es 401 y el interceptor no pudo renovar el token,
+        // significa que el refresh token también expiró
         if (error.status === 401) {
+          console.log('🔴 [App] Sesión expirada, limpiando tokens');
           this.tokenStorage.clearTokens();
+          this.currentUser.set(null);
+          this.router.navigate(['/login']);
         }
       },
     });
@@ -146,6 +166,18 @@ export class App {
   }
 
   protected logout(): void {
+    console.log('🚪 Cerrando sesión');
+
+    // Opcional: revocar el refresh token en el backend
+    const refreshToken = this.tokenStorage.getRefreshToken();
+    if (refreshToken) {
+      this.userService.revokeToken(refreshToken).subscribe({
+        next: () => console.log('✅ Refresh token revocado en backend'),
+        error: (error) => console.error('⚠️ Error revocando token:', error),
+      });
+    }
+
+    // Limpiar tokens locales
     this.tokenStorage.clearTokens();
     this.currentUser.set(null);
     this.router.navigate(['/login']);

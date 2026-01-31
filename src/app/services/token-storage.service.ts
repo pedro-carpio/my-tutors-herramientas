@@ -5,8 +5,8 @@ import { isPlatformBrowser } from '@angular/common';
  * Servicio para almacenar y recuperar tokens del backend
  *
  * ALMACENAMIENTO:
- * - JWT (corta duración: 1h) en sessionStorage
- * - Refresh Token (larga duración: 100 días) en cookie httpOnly-like (solo lectura desde JS)
+ * - JWT (corta duración: 1h) en localStorage (persiste entre pestañas)
+ * - Refresh Token (larga duración: 100 días) en localStorage
  *
  * El JWT contiene:
  * - user_id: identificador del usuario en el backend
@@ -22,21 +22,21 @@ export class TokenStorageService {
   private readonly REFRESH_TOKEN_KEY = 'refresh_token';
 
   /**
-   * Guarda el JWT en sessionStorage (expira al cerrar navegador)
+   * Guarda el JWT en localStorage (persiste entre pestañas y al cerrar navegador)
    */
   saveToken(token: string): void {
     if (isPlatformBrowser(this.platformId)) {
-      sessionStorage.setItem(this.TOKEN_KEY, token);
-      console.log('💾 JWT almacenado en sessionStorage');
+      localStorage.setItem(this.TOKEN_KEY, token);
+      console.log('💾 JWT almacenado en localStorage');
     }
   }
 
   /**
-   * Recupera el JWT desde sessionStorage
+   * Recupera el JWT desde localStorage
    */
   getToken(): string | null {
     if (isPlatformBrowser(this.platformId)) {
-      return sessionStorage.getItem(this.TOKEN_KEY);
+      return localStorage.getItem(this.TOKEN_KEY);
     }
     return null;
   }
@@ -66,9 +66,9 @@ export class TokenStorageService {
    */
   clearTokens(): void {
     if (isPlatformBrowser(this.platformId)) {
-      sessionStorage.removeItem(this.TOKEN_KEY);
+      localStorage.removeItem(this.TOKEN_KEY);
       localStorage.removeItem(this.REFRESH_TOKEN_KEY);
-      console.log('🗑️ Tokens eliminados');
+      console.log('🗑️ Tokens eliminados de localStorage');
     }
   }
 
